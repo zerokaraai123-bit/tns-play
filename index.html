@@ -162,8 +162,11 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
     <div class="log" id="log"></div>
   </div>
 
-  <div class="panel hidden" id="menu">
-    <div class="note">操作の切り替え（この先の判断から有効）</div>
+  <div class="panel hidden" id="menu" style="position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 70px);z-index:30;max-height:75vh;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.6)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div class="note">操作の切り替え（この先の判断から有効）</div>
+      <button id="mClose" class="ghost">✕ 閉じる</button>
+    </div>
     <div class="checks" id="mUnits" style="margin-top:6px"></div>
     <label class="note" style="display:block;margin-top:8px">庇う（介入）の判断</label>
     <select id="mIv" style="width:100%;min-height:44px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px">
@@ -453,7 +456,8 @@ $("mApply").onclick = async () => {
   $("menu").classList.add("hidden");
   onView(r.view);
 };
-$("mRestart").onclick = restart;
+$("mRestart").onclick = () => { $("menu").classList.add("hidden"); restart(); };
+$("mClose").onclick = () => $("menu").classList.add("hidden");
 $("mNew").onclick = toStart;
 
 async function startBattle(watch){
