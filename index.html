@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TNS 戦闘プロトタイプ</title>
+<style>
+:root{
+  --bg:#14161c; --panel:#1d2029; --panel2:#252935; --line:#343949; --text:#e8e6e1; --sub:#9aa0ad;
+  --hp:#4fbf7a; --hplow:#e0a83a; --hpcrit:#e0563a; --ep:#4f8fe0; --enemy:#c45a4a; --ally:#4a8fc4;
+  --act:#ffd25e; --tg:#ff5e5e; --iv:#5ec8ff; --cast:#c48bff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:14px;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.pri{background:#3b5b8c;border-color:#5577aa}
+button.warn{background:#5a3434;border-color:#7a4a4a}
+button.ghost{background:transparent}
+.wrap{max-width:860px;margin:0 auto;padding:8px 10px calc(16px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5;padding:6px 0;border-bottom:1px solid var(--line)}
+header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
+.clock{font-variant-numeric:tabular-nums;color:var(--act);font-weight:700}
+.sp{flex:1}
+.hbtn{min-height:38px;padding:6px 10px}
+.field{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.rowlbl{font-size:11px;color:var(--sub);margin:2px 2px -2px}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.row.two{grid-template-columns:repeat(3,1fr)}
+.front{display:flex;align-items:center;gap:6px;justify-content:center;color:var(--sub);font-size:12px;margin:2px 0}
+.front:before,.front:after{content:"";flex:1;border-top:1px dashed var(--line)}
+.route{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px}
+.route.open{border-color:var(--tg);color:var(--tg)}
+.unit{background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:6px 7px;min-height:86px;position:relative;transition:border-color .15s, box-shadow .15s, opacity .2s}
+.unit.enemy{border-left:5px solid var(--enemy)}
+.unit.ally{border-left:5px solid var(--ally)}
+.unit .nm{font-weight:700;font-size:13px;display:flex;justify-content:space-between;gap:4px;white-space:nowrap;overflow:hidden}
+.unit .nm small{color:var(--sub);font-weight:400;font-size:10px}
+.bar{height:14px;background:#0e1015;border-radius:6px;margin-top:4px;position:relative;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--hp);transition:width .25s}
+.bar.ep i{background:var(--ep)}
+.bar span{position:relative;font-size:10px;line-height:14px;padding-left:5px;text-shadow:0 0 2px #000,0 0 2px #000;font-variant-numeric:tabular-nums}
+.st{font-size:11px;color:var(--sub);margin-top:4px;min-height:15px;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;margin:3px 3px 0 0;background:#333a4a}
+.unit.acting{border-color:var(--act);box-shadow:0 0 0 2px rgba(255,210,94,.35)}
+.unit.targeted{border-color:var(--tg);box-shadow:0 0 0 2px rgba(255,94,94,.35)}
+.unit.guarding{border-color:var(--iv);box-shadow:0 0 0 2px rgba(94,200,255,.35)}
+.unit.casting .st{color:var(--cast)}
+.unit.displaced .st{color:#ffb35e}
+.unit.incap{opacity:.55}
+.unit.dead{opacity:.3;filter:grayscale(1)}
+.unit.selectable{border-color:#7dff9a;cursor:pointer}
+.unit .mark{position:absolute;right:6px;bottom:4px;font-size:15px}
+.unit .badges{font-size:10.5px;color:var(--cast);min-height:0;line-height:1.3}
+.castbar{height:4px;background:#2b2140;border-radius:3px;margin-top:3px;overflow:hidden}
+.castbar i{display:block;height:100%;background:var(--cast)}
+.timeline{display:flex;gap:4px;overflow-x:auto;padding:4px 0;margin-top:6px;-webkit-overflow-scrolling:touch}
+.chip{flex:0 0 auto;font-size:11px;padding:4px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);white-space:nowrap}
+.chip.enemy{border-color:#6a3a34}.chip.ally{border-color:#2f5470}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px}
+.log{max-height:170px;overflow-y:auto;font-size:12px;line-height:1.55}
+.log div{border-bottom:1px solid #262a35;padding:2px 0}
+.log .t{color:var(--sub);font-variant-numeric:tabular-nums;margin-right:6px}
+.log .tn{color:var(--act)}
+.sheet{position:sticky;bottom:0;z-index:6;background:#191c24;border:1px solid #4a5168;border-radius:14px 14px 0 0;padding:10px;margin-top:8px;box-shadow:0 -6px 18px rgba(0,0,0,.45);max-height:52vh;overflow-y:auto}
+.sheet h2{font-size:15px;margin:0 0 4px;padding-right:70px}
+.sheet .mini{position:absolute;right:8px;top:6px;min-height:34px;padding:4px 10px;font-size:12px}
+.sheet.min > :not(h2):not(.mini){display:none}
+.ai{font-size:12px;color:var(--sub);margin:4px 0 8px;line-height:1.5}
+.ai b{color:var(--text)}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.opts button{text-align:left;line-height:1.35}
+.opts button small{display:block;color:var(--sub);font-size:11px}
+.opts .full{grid-column:1/-1}
+.why{color:#ff9a8a}
+.start{max-width:560px;margin:20px auto}
+.start label{display:block;margin:10px 0 4px;color:var(--sub);font-size:12px}
+.start select,.start input[type=text],.start input[type=number]{width:100%;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);min-height:44px}
+.checks{display:flex;flex-wrap:wrap;gap:6px}
+.checks label{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0;color:var(--text)}
+.note{font-size:12px;color:var(--sub);line-height:1.6}
+.endbox{text-align:center}
+.endbox .res{font-size:26px;font-weight:800;margin:6px 0}
+.err{color:#ff8a7a;white-space:pre-wrap;font-size:12px}
+.hidden{display:none!important}
+.legend{font-size:11px;color:var(--sub);display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.legend span:before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px;border:2px solid var(--c)}
+@media (max-width:420px){ .unit{min-height:80px;padding:5px} .unit .nm{font-size:12px} .opts{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ===== 開始画面 ===== -->
+<div id="startView" class="start">
+  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）</span></h1>
+  <p class="note">味方5人（前衛3・後衛2）で戦います。味方の手番と、後衛が狙われた瞬間に時間が止まり、指示を出せます。何も指示しない部分は、既存の味方AIが判断します。</p>
+  <label>ルール</label>
+  <select id="sRule"><option value="v15" selected>Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
+  <label>敵の知能</label>
+  <select id="sIntel"><option value="0">低知能</option><option value="1" selected>通常</option><option value="2">高知能</option><option value="3">戦術級</option></select>
+  <label>あなたが操作する味方</label>
+  <div class="checks" id="sUnits">
+    <label><input type="checkbox" value="adel" checked>アデル（左FRONT）</label>
+    <label><input type="checkbox" value="vanguard3" checked>前衛3（中央FRONT）</label>
+    <label><input type="checkbox" value="vanguard" checked>前衛2（右FRONT）</label>
+    <label><input type="checkbox" value="celestia" checked>セレスティア（左REAR）</label>
+    <label><input type="checkbox" value="toolsmith" checked>エーテル学者（右REAR・Ver0.15は観測／応急整備）</label>
+  </div>
+  <label>庇う（介入）の判断</label>
+  <select id="sIv"><option value="rear" selected>後衛が狙われたときは自分で決める</option><option value="all">前衛どうしの庇い合いも自分で決める</option><option value="none">AIに任せる</option></select>
+  <details style="margin-top:10px"><summary class="note">詳しい設定</summary>
+    <label>戦闘の番号（seed。空欄ならランダム。同じ番号なら同じ戦闘）</label>
+    <input id="sSeed" type="text" inputmode="numeric" placeholder="ランダム">
+    <label>炎嵐の詠唱時間</label>
+    <select id="sCast"><option>0</option><option>2</option><option selected>4</option><option>6</option></select>
+    <label>敵の攻撃力の倍率（Ver0.15 の初期値 1.0 / Ver0.14 の初期値 0.954）</label>
+    <input id="sPow" type="number" step="0.001" value="1.0">
+    <p class="note">速度方式B（指数0.5）・3FRONT/2REAR。どれも試作用の暫定設定です。炎嵐の詠唱時間は Ver0.14 だけで使います（Ver0.15 は4）。</p>
+  </details>
+  <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+    <button class="pri" id="btnStart" style="flex:1">戦闘開始</button>
+    <button id="btnWatch">全部AIで観戦</button>
+  </div>
+  <p id="startMsg" class="note"></p>
+</div>
+
+<!-- ===== 戦闘画面 ===== -->
+<div id="battleView" class="hidden">
+  <header>
+    <h1>TNS</h1>
+    <span class="clock" id="clock">T 0.00</span>
+    <span class="note" id="roundLbl"></span>
+    <span class="sp"></span>
+    <button class="hbtn" id="btnPlay" title="一時停止・再開">⏸ 一時停止</button>
+    <button class="hbtn" id="btnSpeed">速度: 普通</button>
+    <button class="hbtn" id="btnSkip" title="演出を飛ばす">⏭</button>
+    <button class="hbtn" id="btnUndo" title="直前の指示を取り消す">↶ 1手戻す</button>
+    <button class="hbtn ghost" id="btnMenu">☰</button>
+  </header>
+
+  <div class="field">
+    <div class="rowlbl">敵 後衛</div>
+    <div class="row" id="rowEnemyRear"></div>
+    <div class="rowlbl">敵 前衛</div>
+    <div class="row" id="rowEnemyFront"></div>
+    <div class="front" id="frontLine">前線</div>
+    <div class="rowlbl">味方 前衛（左・中央・右）</div>
+    <div class="row" id="rowAllyFront"></div>
+    <div class="rowlbl">味方 後衛（左・右）</div>
+    <div class="row two" id="rowAllyRear"></div>
+  </div>
+  <div class="legend">
+    <span style="--c:var(--act)">行動中</span><span style="--c:var(--tg)">攻撃されている</span><span style="--c:var(--iv)">庇っている</span><span style="--c:#7dff9a">選べる対象</span>
+  </div>
+  <div class="timeline" id="timeline"></div>
+
+  <div class="sheet hidden" id="sheet"></div>
+
+  <div class="panel">
+    <div class="note" style="margin-bottom:4px">戦闘の記録（新しい順）</div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel hidden" id="menu">
+    <div class="note">操作の切り替え（この先の判断から有効）</div>
+    <div class="checks" id="mUnits" style="margin-top:6px"></div>
+    <label class="note" style="display:block;margin-top:8px">庇う（介入）の判断</label>
+    <select id="mIv" style="width:100%;min-height:44px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px">
+      <option value="rear">後衛が狙われたときは自分で決める</option><option value="all">前衛どうしも自分で決める</option><option value="none">AIに任せる</option>
+    </select>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <button class="pri" id="mApply">切り替える</button>
+      <button id="mRestart">同じ戦闘を最初から</button>
+      <button class="warn" id="mNew">設定画面へ戻る</button>
+    </div>
+    <p class="note" id="mInfo"></p>
+  </div>
+  <p class="err" id="err"></p>
+</div>
+</div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- 通信（ローカルサーバー版 / ブラウザ内Python版）
+async function api(req){
+  if (window.TNS_PY) { return JSON.parse(await window.TNS_PY(JSON.stringify(req))); }
+  const r = await fetch("api", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(req)});
+  return await r.json();
+}
+
+// ---------------------------------------------------------------- 状態
+const G = { st:null, meta:{}, frames:[], total:0, queue:[], playing:true, speed:1, busy:false,
+            snap:null, pending:null, view:null, sel:null, log:[], hl:{} };
+const SPEEDS = [{n:"ゆっくり", ms:1100},{n:"普通", ms:550},{n:"速い", ms:220},{n:"一瞬", ms:0}];
+const $ = id => document.getElementById(id);
+const nm = id => (G.meta[id] ? G.meta[id].name : id);
+const fmtT = x => (x==null ? "—" : x.toFixed(2));
+
+function layoutIds(){
+  if (G.meta["shaman"]) return { rowEnemyRear:["leader","","shaman"], rowEnemyFront:["wolf_a","wolf_c","wolf_b"],
+           rowAllyFront:["adel","vanguard3","vanguard"], rowAllyRear:["celestia","","toolsmith"] };
+  return { rowEnemyRear:["leader","thrower","thrower2"], rowEnemyFront:["wolf_a","wolf_b","wolf_c"],
+           rowAllyFront:["adel","vanguard3","vanguard"], rowAllyRear:["celestia","","toolsmith"] };
+}
+function buildField(){
+  const L = layoutIds();
+  for (const row in L){
+    const el = $(row); el.innerHTML = "";
+    for (const id of L[row]){
+      const d = document.createElement("div");
+      if (!id){ d.style.visibility="hidden"; el.appendChild(d); continue; }
+      const m = G.meta[id];
+      d.className = "unit " + m.side; d.id = "u-"+id;
+      d.innerHTML = `<div class="nm"><span>${m.name}${m.leader?" ★":""}</span><small>${m.pos || ("速度"+m.speed)}</small></div>
+        <div class="bar hp"><i></i><span></span></div><div class="bar ep"><i></i><span></span></div>
+        <div class="castbar hidden"><i></i></div><div class="st"></div><div class="badges"></div><span class="mark"></span>`;
+      d.addEventListener("click", () => onUnitTap(id));
+      el.appendChild(d);
+    }
+  }
+}
+
+function renderSnap(snap, hl){
+  hl = hl || {};
+  if (!snap) return;
+  $("clock").textContent = "T " + snap.t.toFixed(2);
+  $("roundLbl").textContent = "第" + snap.round + "巡";
+  for (const u of snap.units){
+    const el = $("u-"+u.id); if (!el) continue;
+    const m = G.meta[u.id];
+    const hpR = Math.max(0, u.hp / m.hp_max), epR = m.ep_max ? Math.max(0, u.ep / m.ep_max) : 0;
+    const hb = el.querySelector(".bar.hp i");
+    hb.style.width = (hpR*100)+"%";
+    hb.style.background = hpR > .6 ? "var(--hp)" : (hpR > .3 ? "var(--hplow)" : "var(--hpcrit)");
+    el.querySelector(".bar.hp span").textContent = `HP ${u.hp}/${m.hp_max}`;
+    el.querySelector(".bar.ep i").style.width = (epR*100)+"%";
+    el.querySelector(".bar.ep span").textContent = `EP ${u.ep}/${m.ep_max}`;
+    let st = "", cls = ["unit", m.side];
+    const cb = el.querySelector(".castbar");
+    cb.classList.add("hidden");
+    if (u.dead){ st = "死亡"; cls.push("dead"); }
+    else if (u.incap){ st = "戦闘不能（治療で復帰できる）"; cls.push("incap"); }
+    else if (u.cast){ st = `✦${u.cast.action} 詠唱中 完成まで ${fmtT(u.cast.left)}T`; cls.push("casting");
+      cb.classList.remove("hidden"); const tot = G.castTotal && G.castTotal[u.id] || u.cast.left || 1;
+      cb.querySelector("i").style.width = Math.max(0, Math.min(100, 100*(1 - (u.cast.left||0)/tot)))+"%"; }
+    else if (u.diving){ st = `相手の後衛へ踏み込んでいる・戻るまで ${fmtT(u.next)}T`; cls.push("displaced"); }
+    else if (u.displaced){ st = `持ち場を離れている・戻るまで ${fmtT(u.next)}T`; cls.push("displaced"); }
+    else { st = `次の行動まで ${fmtT(u.next)}T`; }
+    if (snap.actor === u.id || hl.actor === u.id) cls.push("acting");
+    if (hl.targets && hl.targets.has(u.id)) cls.push("targeted");
+    if (hl.guards && hl.guards.has(u.id)) cls.push("guarding");
+    if (G.sel && G.sel.targets && G.sel.targets.has(u.id)) cls.push("selectable");
+    el.className = cls.join(" ");
+    el.querySelector(".st").textContent = st;
+    const mk = [];
+    if (hl.targets && hl.targets.has(u.id)) mk.push("⚔");
+    if (hl.guards && hl.guards.has(u.id)) mk.push("🛡");
+    el.querySelector(".mark").textContent = mk.join("");
+    const bd = [];
+    if (u.fixed) bd.push("👁 固定: " + u.fixed);
+    if (u.pinned) bd.push("⚓ 牽制されている");
+    if (u.holding) bd.push("⛨ 死守");
+    if (snap.howl && Object.values(snap.howl).includes(u.id)) bd.push("🐺 群れに狙われている");
+    el.querySelector(".badges").textContent = bd.join("　");
+  }
+  // 経路
+  const r = snap.routes || {};
+  const tag = (id, lbl) => `<span class="route ${r[id]==="OPEN"?"open":""}">${lbl}: ${r[id]==="OPEN"?"突破できる":"塞いでいる"}</span>`;
+  let fl = `前線 ${tag("ally_L","左（→セレスティア）")} ${tag("ally_R","右（→学者）")}`;
+  if (snap.route_w && snap.route_w.enemy_R != null){
+    const ew = (id, lbl) => `<span class="route ${snap.route_w[id]<=1?"open":""}">${lbl}: ${snap.route_w[id]===0?"突破できる":(snap.route_w[id]<=1?"薄い（突撃で抜ける）":"厚い")}</span>`;
+    fl += `<br>敵の前線 ${ew("enemy_L","左（→リーダー）")} ${ew("enemy_R","右（→呪術師）")}`;
+  }
+  $("frontLine").innerHTML = fl;
+  // この後の行動順
+  const tl = $("timeline"); tl.innerHTML = "<span class='chip'>この後の順番 →</span>";
+  for (const id of (snap.upcoming||[]).slice(0,10)){
+    const c = document.createElement("span"); c.className = "chip " + (G.meta[id]?G.meta[id].side:""); c.textContent = nm(id); tl.appendChild(c);
+  }
+}
+
+function addLog(t, lines, actor){
+  const box = $("log");
+  const div = document.createElement("div");
+  div.innerHTML = `<span class="t">T${t.toFixed(2)}</span><span class="tn">${nm(actor)}の手番</span>` + (lines.length? "：" + lines.map(x=>x.text).join(" ／ ") : "");
+  box.prepend(div);
+  while (box.children.length > 120) box.removeChild(box.lastChild);
+}
+
+// ---------------------------------------------------------------- 再生
+function onView(v){
+  if (!v) return;
+  G.view = v;
+  if (v.static){ const first = !Object.keys(G.meta).length; for (const u of v.static.units) G.meta[u.id] = u; if (first) buildField(); }
+  if (v.frames_from === 0){ G.total = 0; $("log").innerHTML = ""; }
+  for (const f of v.frames) G.queue.push(f);
+  G.total = v.frames_total;
+  G.pending = v.pending; G.snap = v.snap;
+  $("sheet").classList.add("hidden");
+  playNext();
+}
+let timer = null;
+function playNext(){
+  clearTimeout(timer);
+  if (!G.playing) return;
+  if (!G.queue.length){ finishPlayback(); return; }
+  const f = G.queue.shift();
+  const hl = {actor: f.actor, targets: new Set(), guards: new Set()};
+  for (const e of f.events){
+    if (e.type === "attack") hl.targets.add(e.t);
+    if (e.type === "iv"){ hl.guards.add(e.a); }
+    if (e.type === "storm"){ for (const id in G.meta) if (G.meta[id].side==="enemy") hl.targets.add(id); }
+    if (e.type === "cast" && e.text.includes("開始")){ G.castTotal = G.castTotal||{}; const m = e.text.match(/約([\d.]+)T/); if (m) G.castTotal[e.a] = parseFloat(m[1]); }
+  }
+  addLog(f.t, f.events, f.actor);
+  renderSnap(f.after, hl);
+  $("clock").textContent = "T " + f.t.toFixed(2);
+  const ms = SPEEDS[G.speed].ms;
+  if (ms === 0) { playNext(); return; }
+  timer = setTimeout(playNext, ms);
+}
+function finishPlayback(){
+  const v = G.view;
+  if (!v) return;
+  if (v.status === "decision") showDecision(v.pending);
+  else showEnd(v);
+}
+
+// ---------------------------------------------------------------- 判断
+function aiLine(p){
+  const r = (p.ai.reasons||[]).join(" ").slice(0,160);
+  return `<div class="ai">AIなら: <b>${p.ai.text}</b>${r?`<br><span style="font-size:11px">${esc(r)}</span>`:""}</div>`;
+}
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function addMini(sh){
+  const b = document.createElement("button"); b.className = "mini ghost"; b.textContent = sh.classList.contains("min") ? "▲ 開く" : "▼ 戦場を見る";
+  b.onclick = (e) => { e.stopPropagation(); sh.classList.toggle("min"); b.textContent = sh.classList.contains("min") ? "▲ 開く" : "▼ 戦場を見る"; };
+  sh.prepend(b);
+}
+function showDecision(p){
+  G.sel = null;
+  const sh = $("sheet");
+  sh.classList.remove("hidden"); sh.classList.remove("min"); sh.style.position = "sticky";
+  if (p.kind === "action"){
+    const hl = {actor:p.actor, targets:new Set(), guards:new Set()};
+    renderSnap(p.snap, hl);
+    let h = `<h2>▶ ${nm(p.actor)}の手番（T ${p.snap.t.toFixed(2)}）</h2>` + aiLine(p) + `<div class="opts">`;
+    p.options.forEach((o,i) => {
+      const extra = o.cast!=null ? `詠唱 約${o.cast.toFixed(2)}T` : "";
+      const sub = o.ok ? [o.ep?`EP${o.ep}`:"EP0", extra, o.area==="all"?"敵全体":""].filter(Boolean).join("・")
+                       : `<span class="why">${o.why}</span>`;
+      h += `<button data-a="${i}" ${o.ok?"":"disabled"}>${o.name}<small>${sub}</small></button>`;
+    });
+    h += `<button class="full ghost" id="bAiAct">AIに任せる</button></div><div id="tgtBox"></div>`;
+    sh.innerHTML = h;
+    sh.querySelectorAll("button[data-a]").forEach(b => b.onclick = () => pickAction(p, p.options[+b.dataset.a]));
+    $("bAiAct").onclick = () => send(p, {ai:true});
+    addMini(sh);
+  } else {
+    const hl = {actor:p.attacker, targets:new Set([p.target]), guards:new Set()};
+    renderSnap(p.snap, hl);
+    let h = `<h2>⚠ ${nm(p.attacker)}の${p.action} → ${nm(p.target)}</h2>`;
+    if (p.partial && p.partial.length) h += `<div class="note">${p.partial.map(x=>esc(x.text)).join(" ／ ")}</div>`;
+    h += `<div class="ai">威力の見込み ${p.raw}。${nm(p.target)}がそのまま受けると HP−${p.est_self} の見込み。` +
+         (p.target_casting? `<br><b style="color:var(--cast)">${nm(p.target)}は詠唱中（自分ではエーテル防御できない）</b>`:"") + `</div>`;
+    h += aiLine(p).replace("AIなら:", "AIなら:");
+    h += `<div class="opts">`;
+    p.options.forEach((o,i) => {
+      const bf = o.enemies_before.length ? `戻るまでに動く敵: ${o.enemies_before.join("・")}` : "戻るまでに動く敵: なし";
+      h += `<button data-i="${i}">🛡 ${o.name}${o.pos?`（${o.pos}）`:""}が庇う<small>HP ${o.hp}/${o.hp_max}・EP ${o.ep}（防ぎ切るのに${o.need_ep}）・見込みHP−${o.est}<br>${bf}・戻るまで ${fmtT(o.next)}T</small></button>`;
+    });
+    h += `<button id="bNoIv">庇わない<small>${nm(p.target)}が自分で対応する</small></button>`;
+    h += `<button class="ghost" id="bAiIv">AIに任せる</button></div>`;
+    sh.innerHTML = h;
+    sh.querySelectorAll("button[data-i]").forEach(b => b.onclick = () => send(p, {interceptor: p.options[+b.dataset.i].id}));
+    $("bNoIv").onclick = () => send(p, {interceptor: null});
+    $("bAiIv").onclick = () => send(p, {ai:true});
+    addMini(sh);
+  }
+  sh.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+function pickAction(p, o){
+  if (o.kind === "wait" || !o.targets.length){ send(p, {action:o.id, target:null}); return; }
+  if (o.targets.length === 1 && o.area === "all"){ send(p, {action:o.id, target:o.targets[0].id}); return; }
+  G.sel = {p, o, targets: new Set(o.targets.map(t=>t.id))};
+  renderSnap(p.snap, {actor:p.actor});
+  let h = `<div class="note" style="margin:8px 0 4px">「${o.name}」の対象を選んでください（カードをタップしても選べます）</div><div class="opts">`;
+  o.targets.forEach((t,i) => { h += `<button data-t="${i}">${t.name}<small>${t.info}</small></button>`; });
+  h += `<button class="ghost full" id="bBack">← 行動を選び直す</button></div>`;
+  $("tgtBox").innerHTML = h;
+  $("tgtBox").querySelectorAll("button[data-t]").forEach(b => b.onclick = () => send(p, {action:o.id, target:o.targets[+b.dataset.t].id}));
+  $("bBack").onclick = () => { G.sel = null; renderSnap(p.snap, {actor:p.actor}); $("tgtBox").innerHTML = ""; };
+}
+function onUnitTap(id){
+  if (!G.sel || !G.sel.targets.has(id)) return;
+  send(G.sel.p, {action:G.sel.o.id, target:id});
+}
+async function send(p, choice){
+  if (G.busy) return;
+  G.busy = true; G.sel = null;
+  $("sheet").innerHTML = `<div class="note">計算中…</div>`;
+  try {
+    const r = await api({cmd:"decide", k:p.k, choice, from:G.total});
+    if (!r.ok) { showErr(r); return; }
+    onView(r.view);
+  } finally { G.busy = false; }
+}
+function showEnd(v){
+  const sh = $("sheet"); sh.classList.remove("hidden"); sh.classList.remove("min");
+  renderSnap(v.snap, {});
+  const s = v.static.settings;
+  sh.innerHTML = `<div class="endbox"><div class="res" style="color:${v.winner==="ally"?"var(--hp)":"var(--hpcrit)"}">${v.result}</div>
+    <div class="note">戦闘の番号 ${s.seed}・敵の知能 ${v.static.intel_name}・あなたの指示 ${v.n_player_decisions}回</div>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:10px">
+      <button id="eUndo">↶ 最後の指示をやり直す</button><button id="eRestart">同じ戦闘を最初から</button><button class="pri" id="eNew">新しい戦闘</button></div></div>`;
+  $("eUndo").onclick = undo; $("eRestart").onclick = restart; $("eNew").onclick = toStart;
+}
+function showErr(r){ $("err").textContent = "エラー: " + (r.error||"") + "\n" + (r.trace||""); }
+
+async function undo(){
+  if (G.busy) return; G.busy = true;
+  try { G.queue = []; clearTimeout(timer); $("sheet").classList.remove("hidden"); $("sheet").innerHTML = `<div class="note">計算中…（1手前に戻しています）</div>`;
+        const r = await api({cmd:"undo", from:0}); if (!r.ok) return showErr(r);
+        resetPlayback(); onView(r.view); } finally { G.busy = false; }
+}
+async function restart(){
+  if (G.busy) return; G.busy = true;
+  try { $("sheet").classList.remove("hidden"); $("sheet").innerHTML = `<div class="note">計算中…</div>`;
+        const r = await api({cmd:"restart"}); if (!r.ok) return showErr(r); resetPlayback(); onView(r.view); } finally { G.busy = false; }
+}
+function resetPlayback(){ clearTimeout(timer); G.queue = []; G.total = 0; G.castTotal = {}; $("log").innerHTML = ""; $("sheet").classList.add("hidden"); }
+function toStart(){ resetPlayback(); $("battleView").classList.add("hidden"); $("startView").classList.remove("hidden"); $("menu").classList.add("hidden"); }
+
+// ---------------------------------------------------------------- ボタン
+$("btnPlay").onclick = () => { G.playing = !G.playing; $("btnPlay").textContent = G.playing ? "⏸ 一時停止" : "▶ 再開"; if (G.playing) playNext(); else clearTimeout(timer); };
+$("btnSpeed").onclick = () => { G.speed = (G.speed + 1) % SPEEDS.length; $("btnSpeed").textContent = "速度: " + SPEEDS[G.speed].n; };
+$("btnSkip").onclick = () => { const ms = SPEEDS[G.speed].ms; const sp = G.speed; G.speed = 3; if (G.playing) playNext(); else { G.playing = true; playNext(); G.playing = false; } G.speed = sp; };
+$("btnUndo").onclick = undo;
+$("btnMenu").onclick = () => {
+  const m = $("menu"); m.classList.toggle("hidden");
+  const s = G.view.static.settings;
+  $("mUnits").innerHTML = ["adel","vanguard3","vanguard","celestia","toolsmith"].map(id =>
+    `<label><input type="checkbox" value="${id}" ${s.manual_units.includes(id)?"checked":""}>${nm(id)}</label>`).join("");
+  $("mIv").value = s.manual_intervention === true ? "all" : (s.manual_intervention || "none");
+  $("mInfo").textContent = `ルール ${s.ruleset==="v15"?"Ver0.15":"Ver0.14"}・戦闘の番号 ${s.seed}・敵の知能 ${G.view.static.intel_name}・速度方式${s.method}・敵の攻撃力×${s.enemy_power}`;
+};
+$("mApply").onclick = async () => {
+  const units = [...$("mUnits").querySelectorAll("input:checked")].map(x=>x.value);
+  const r = await api({cmd:"settings", manual_units: units, manual_intervention: $("mIv").value, from:G.total});
+  if (!r.ok) return showErr(r);
+  $("menu").classList.add("hidden");
+  onView(r.view);
+};
+$("mRestart").onclick = restart;
+$("mNew").onclick = toStart;
+
+async function startBattle(watch){
+  const units = watch ? [] : [...$("sUnits").querySelectorAll("input:checked")].map(x=>x.value);
+  const settings = { intel: +$("sIntel").value, manual_units: units, manual_intervention: watch ? "none" : $("sIv").value,
+    cast: +$("sCast").value, enemy_power: parseFloat($("sPow").value) || 1.0, seed: $("sSeed").value.trim() || null,
+    ruleset: $("sRule").value };
+  $("startMsg").textContent = "準備中…";
+  const r = await api({cmd:"new", settings});
+  if (!r.ok){ $("startMsg").textContent = "エラー: " + r.error; return; }
+  $("startMsg").textContent = "";
+  G.meta = {}; resetPlayback();
+  $("startView").classList.add("hidden"); $("battleView").classList.remove("hidden");
+  onView(r.view);
+}
+$("sRule").onchange = () => { $("sPow").value = $("sRule").value === "v15" ? "1.0" : "0.954"; };
+$("btnStart").onclick = () => startBattle(false);
+$("btnWatch").onclick = () => startBattle(true);
+</script>
+
+<div id="bootMsg" style="position:fixed;left:0;right:0;bottom:0;background:#3b5b8c;color:#fff;padding:10px 14px;font-size:13px;z-index:20">
+ブラウザの中で戦闘エンジン（Python）を準備しています…（初回は数十秒かかることがあります）</div>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+(async function(){
+  const msg = document.getElementById("bootMsg");
+  const btns = [document.getElementById("btnStart"), document.getElementById("btnWatch")];
+  btns.forEach(b => b.disabled = true);
+  try {
+    const py = await loadPyodide();
+    const buf = await (await fetch("tns_bundle.zip")).arrayBuffer();
+    py.unpackArchive(buf, "zip", {extractDir: "/home/pyodide/tnsapp"});
+    py.runPython("import sys, os\nsys.path.insert(0, '/home/pyodide/tnsapp')\nos.chdir('/home/pyodide/tnsapp')\nfrom tns.play.api import handle_json");
+    const h = py.globals.get("handle_json");
+    window.TNS_PY = async (s) => h(s);
+    msg.remove();
+    btns.forEach(b => b.disabled = false);
+  } catch (e) {
+    msg.style.background = "#7a3434";
+    msg.textContent = "ブラウザ版の準備に失敗しました: " + e + "（この環境ではブラウザ版が動かない可能性があります。パソコンでのローカル版をお使いください）";
+  }
+})();
+</script>
+
+</body>
+</html>
