@@ -96,7 +96,11 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
   <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）</span></h1>
   <p class="note">味方5人（前衛3・後衛2）で戦います。味方の手番と、後衛が狙われた瞬間に時間が止まり、指示を出せます。何も指示しない部分は、既存の味方AIが判断します。</p>
   <label>ルール</label>
-  <select id="sRule"><option value="v15" selected>Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
+  <select id="sRule"><option value="v17" selected>Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
+  <label>戦闘の始まり（Ver0.17）</label>
+  <select id="sAmb"><option value="0" selected>準備あり（戦闘前に鎧を張る）</option><option value="1">奇襲（準備なし・全員鎧なしで始まる）</option></select>
+  <label>後衛への近接攻撃</label>
+  <select id="sRear"><option value="" selected>ルールの既定（Ver0.17はいつでも届く・それ以前は前線が塞ぐ）</option><option value="open">いつでも届く（敵味方とも）</option><option value="block">前線が塞ぐ</option></select>
   <label>敵の知能</label>
   <select id="sIntel"><option value="0">低知能</option><option value="1" selected>通常</option><option value="2">高知能</option><option value="3">戦術級</option></select>
   <label>あなたが操作する味方</label>
@@ -264,6 +268,8 @@ function renderSnap(snap, hl){
     if (u.fixed) bd.push("👁 固定: " + u.fixed);
     if (u.pinned) bd.push("⚓ 牽制されている");
     if (u.holding) bd.push("⛨ 死守");
+    if (u.device_used) bd.push("⚡ 装置は使用済み（次の手番まで生身）");
+    if (u.layers && u.layers.length) bd.push("🛡 鎧" + u.layers.length + "枚（" + u.layers.join("・") + "）");
     if (snap.howl && Object.values(snap.howl).includes(u.id)) bd.push("🐺 群れに狙われている");
     el.querySelector(".badges").textContent = bd.join("　");
   }
@@ -275,6 +281,7 @@ function renderSnap(snap, hl){
     const ew = (id, lbl) => `<span class="route ${snap.route_w[id]<=1?"open":""}">${lbl}: ${snap.route_w[id]===0?"突破できる":(snap.route_w[id]<=1?"薄い（突撃で抜ける）":"厚い")}</span>`;
     fl += `<br>敵の前線 ${ew("enemy_L","左（→リーダー）")} ${ew("enemy_R","右（→呪術師）")}`;
   }
+  if (snap.block === 0) fl = "前線: なし（後衛にもいつでも近接攻撃が届く。守りは鎧だけ）";
   $("frontLine").innerHTML = fl;
   // この後の行動順
   const tl = $("timeline"); tl.innerHTML = "<span class='chip'>この後の順番 →</span>";
@@ -346,6 +353,18 @@ function showDecision(p){
   G.sel = null;
   const sh = $("sheet");
   sh.classList.remove("hidden"); sh.classList.remove("min"); sh.style.position = "sticky";
+  if (p.kind === "preshield"){
+    renderSnap(p.snap, {actor:p.actor});
+    let h = `<h2>🛡 戦闘前の準備: ${nm(p.actor)}</h2><div class="note">${esc(p.shield_info||"")}</div>` +
+            (p.ai ? `<div class="ai">AIなら: <b>${esc(p.ai.text)}</b></div>` : "") + `<div class="opts">`;
+    p.shield_opts.forEach((x,i) => { h += `<button data-s="${i}">🛡 ${esc(x.name)}に張る<small>${esc(x.note)}</small></button>`; });
+    h += `<button data-s="-1">張らない<small>EPを温存する</small></button><button class="ghost" id="bAiPre">AIに任せる</button></div>`;
+    sh.innerHTML = h;
+    sh.querySelectorAll("button[data-s]").forEach(b => b.onclick = () => {
+      const i = +b.dataset.s; send(p, {shield: i < 0 ? null : p.shield_opts[i].id}); });
+    $("bAiPre").onclick = () => send(p, {ai:true});
+    return;
+  }
   if (p.kind === "action"){
     const hl = {actor:p.actor, targets:new Set(), guards:new Set()};
     renderSnap(p.snap, hl);
@@ -370,9 +389,12 @@ function showDecision(p){
          (p.target_casting? `<br><b style="color:var(--cast)">${nm(p.target)}は詠唱中（自分ではエーテル防御できない）</b>`:"") + `</div>`;
     h += aiLine(p).replace("AIなら:", "AIなら:");
     h += `<div class="opts">`;
+    if (p.device) h += `<div class="note">庇う＝前衛が持ち場を離れ、装置の鎧を${nm(p.target)}にまとわせる。鎧は上限まで防ぎ、超えた分（余波）は${nm(p.target)}の肉体へ。庇った前衛は次の自分の手番まで生身。` +
+        (p.target_device ? `${nm(p.target)}が自分で受けるなら、自分の装置を使うかはAIが判断する。` : `<b>${nm(p.target)}の装置は使用済み（自分では防げない）</b>`) + `</div>`;
     p.options.forEach((o,i) => {
       const bf = o.enemies_before.length ? `戻るまでに動く敵: ${o.enemies_before.join("・")}` : "戻るまでに動く敵: なし";
-      h += `<button data-i="${i}">🛡 ${o.name}${o.pos?`（${o.pos}）`:""}が庇う<small>HP ${o.hp}/${o.hp_max}・EP ${o.ep}（防ぎ切るのに${o.need_ep}）・見込みHP−${o.est}<br>${bf}・戻るまで ${fmtT(o.next)}T</small></button>`;
+      if (o.armor) h += `<button data-i="${i}">🛡 ${o.name}${o.pos?`（${o.pos}）`:""}が鎧をまとわせる<small>鎧の上限 ${o.cap!=null?o.cap:"なし"}・${o.name}のEP ${o.ep}（使う見込み${o.need_ep}）・${nm(p.target)}への余波 HP−${o.over}<br>${bf}・戻るまで ${fmtT(o.next)}T</small></button>`;
+      else h += `<button data-i="${i}">🛡 ${o.name}${o.pos?`（${o.pos}）`:""}が庇う<small>HP ${o.hp}/${o.hp_max}・EP ${o.ep}（防ぎ切るのに${o.need_ep}）・見込みHP−${o.est}<br>${bf}・戻るまで ${fmtT(o.next)}T</small></button>`;
     });
     h += `<button id="bNoIv">庇わない<small>${nm(p.target)}が自分で対応する</small></button>`;
     h += `<button class="ghost" id="bAiIv">AIに任せる</button></div>`;
@@ -384,21 +406,38 @@ function showDecision(p){
   }
   sh.scrollIntoView({block:"nearest", behavior:"smooth"});
 }
+function commit(p, o, choice){
+  // Ver0.17: 行動と一緒に、鎧を張る先を選ぶ
+  if (p.kind !== "action" || !p.shield_opts || choice.ai) { send(p, choice); return; }
+  if (o && o.id === "focus") { send(p, {...choice, shield:null}); return; }
+  const opts = p.shield_opts.filter(x => !(o && o.cast && x.self));
+  G.sel = null; renderSnap(p.snap, {actor:p.actor});
+  let h = `<div class="note" style="margin:8px 0 4px">鎧を張る先を選んでください。${esc(p.shield_info||"")}` +
+          (p.ai && p.ai.shield_text ? `<br>AIなら: <b>${esc(p.ai.shield_text)}</b>` : "") +
+          (o && o.cast ? "<br>詠唱を始める手番は、自分には張れない" : "") + `</div><div class="opts">`;
+  opts.forEach((x,i) => { h += `<button data-s="${i}">🛡 ${esc(x.name)}に張る<small>${esc(x.note)}</small></button>`; });
+  h += `<button data-s="-1">張らない<small>EPを温存する</small></button>`;
+  h += `<button class="ghost full" id="bBackS">← 行動を選び直す</button></div>`;
+  $("tgtBox").innerHTML = h;
+  $("tgtBox").querySelectorAll("button[data-s]").forEach(b => b.onclick = () => {
+    const i = +b.dataset.s; send(p, {...choice, shield: i < 0 ? null : opts[i].id}); });
+  $("bBackS").onclick = () => { renderSnap(p.snap, {actor:p.actor}); $("tgtBox").innerHTML = ""; };
+}
 function pickAction(p, o){
-  if (o.kind === "wait" || !o.targets.length){ send(p, {action:o.id, target:null}); return; }
-  if (o.targets.length === 1 && o.area === "all"){ send(p, {action:o.id, target:o.targets[0].id}); return; }
+  if (o.kind === "wait" || !o.targets.length){ commit(p, o, {action:o.id, target:null}); return; }
+  if (o.targets.length === 1 && o.area === "all"){ commit(p, o, {action:o.id, target:o.targets[0].id}); return; }
   G.sel = {p, o, targets: new Set(o.targets.map(t=>t.id))};
   renderSnap(p.snap, {actor:p.actor});
   let h = `<div class="note" style="margin:8px 0 4px">「${o.name}」の対象を選んでください（カードをタップしても選べます）</div><div class="opts">`;
   o.targets.forEach((t,i) => { h += `<button data-t="${i}">${t.name}<small>${t.info}</small></button>`; });
   h += `<button class="ghost full" id="bBack">← 行動を選び直す</button></div>`;
   $("tgtBox").innerHTML = h;
-  $("tgtBox").querySelectorAll("button[data-t]").forEach(b => b.onclick = () => send(p, {action:o.id, target:o.targets[+b.dataset.t].id}));
+  $("tgtBox").querySelectorAll("button[data-t]").forEach(b => b.onclick = () => commit(p, o, {action:o.id, target:o.targets[+b.dataset.t].id}));
   $("bBack").onclick = () => { G.sel = null; renderSnap(p.snap, {actor:p.actor}); $("tgtBox").innerHTML = ""; };
 }
 function onUnitTap(id){
   if (!G.sel || !G.sel.targets.has(id)) return;
-  send(G.sel.p, {action:G.sel.o.id, target:id});
+  const sel = G.sel; commit(sel.p, sel.o, {action:sel.o.id, target:id});
 }
 async function send(p, choice){
   if (G.busy) return;
@@ -447,7 +486,7 @@ $("btnMenu").onclick = () => {
   $("mUnits").innerHTML = ["adel","vanguard3","vanguard","celestia","toolsmith"].map(id =>
     `<label><input type="checkbox" value="${id}" ${s.manual_units.includes(id)?"checked":""}>${nm(id)}</label>`).join("");
   $("mIv").value = s.manual_intervention === true ? "all" : (s.manual_intervention || "none");
-  $("mInfo").textContent = `ルール ${s.ruleset==="v15"?"Ver0.15":"Ver0.14"}・戦闘の番号 ${s.seed}・敵の知能 ${G.view.static.intel_name}・速度方式${s.method}・敵の攻撃力×${s.enemy_power}`;
+  $("mInfo").textContent = `ルール ${({v17:"Ver0.17",v16:"Ver0.16",v15:"Ver0.15"})[s.ruleset]||"Ver0.14"}・戦闘の番号 ${s.seed}・敵の知能 ${G.view.static.intel_name}・速度方式${s.method}・敵の攻撃力×${s.enemy_power}${s.ambush?"・奇襲（準備なし）":""}・後衛への近接${s.rear_reach==="open"?"いつでも届く":(s.rear_reach==="block"?"前線が塞ぐ":"ルールの既定")}`;
 };
 $("mApply").onclick = async () => {
   const units = [...$("mUnits").querySelectorAll("input:checked")].map(x=>x.value);
@@ -464,7 +503,7 @@ async function startBattle(watch){
   const units = watch ? [] : [...$("sUnits").querySelectorAll("input:checked")].map(x=>x.value);
   const settings = { intel: +$("sIntel").value, manual_units: units, manual_intervention: watch ? "none" : $("sIv").value,
     cast: +$("sCast").value, enemy_power: parseFloat($("sPow").value) || 1.0, seed: $("sSeed").value.trim() || null,
-    ruleset: $("sRule").value };
+    ruleset: $("sRule").value, rear_reach: $("sRear").value || null, ambush: $("sAmb").value === "1" };
   $("startMsg").textContent = "準備中…";
   const r = await api({cmd:"new", settings});
   if (!r.ok){ $("startMsg").textContent = "エラー: " + r.error; return; }
@@ -473,7 +512,7 @@ async function startBattle(watch){
   $("startView").classList.add("hidden"); $("battleView").classList.remove("hidden");
   onView(r.view);
 }
-$("sRule").onchange = () => { $("sPow").value = $("sRule").value === "v15" ? "1.0" : "0.954"; };
+$("sRule").onchange = () => { $("sPow").value = $("sRule").value === "v14" ? "0.954" : "1.0"; };
 $("btnStart").onclick = () => startBattle(false);
 $("btnWatch").onclick = () => startBattle(true);
 </script>
