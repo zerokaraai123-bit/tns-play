@@ -99,6 +99,10 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
   <select id="sRule"><option value="v17" selected>Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
   <label>戦闘の始まり（Ver0.17）</label>
   <select id="sAmb"><option value="0" selected>準備あり（戦闘前に鎧を張る）</option><option value="1">奇襲（準備なし・全員鎧なしで始まる）</option></select>
+  <label>鎧の基本セット（移動中にいつでも変えられる想定・Ver0.17）</label>
+  <div class="checks" id="presetBox"></div>
+  <label>戦闘開始時の鎧</label>
+  <select id="sPre"><option value="preset" selected>基本セットで始める</option><option value="manual">一人ずつ決める（操作するキャラ）</option></select>
   <label>後衛への近接攻撃</label>
   <select id="sRear"><option value="" selected>ルールの既定（Ver0.17はいつでも届く・それ以前は前線が塞ぐ）</option><option value="open">いつでも届く（敵味方とも）</option><option value="block">前線が塞ぐ</option></select>
   <label>敵の知能</label>
@@ -179,6 +183,7 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
       <button class="pri" id="mApply">切り替える</button>
       <button id="mRestart">同じ戦闘を最初から</button>
+      <button id="mRec">📋 ここまでの記録をコピー</button><div id="mRecBox"></div>
       <button class="warn" id="mNew">設定画面へ戻る</button>
     </div>
     <p class="note" id="mInfo"></p>
@@ -412,7 +417,8 @@ function commit(p, o, choice){
   if (o && o.id === "focus") { send(p, {...choice, shield:null}); return; }
   const opts = p.shield_opts.filter(x => !(o && o.cast && x.self));
   G.sel = null; renderSnap(p.snap, {actor:p.actor});
-  let h = `<div class="note" style="margin:8px 0 4px">鎧を張る先を選んでください。${esc(p.shield_info||"")}` +
+  const presetTxt = p.shield_preset_has ? `<br>基本セット: <b>${p.shield_preset_id ? esc(nm(p.shield_preset_id)===nm(p.actor)?"自分":nm(p.shield_preset_id)) + "に張る" : "張らない"}</b>` : "";
+  let h = `<div class="note" style="margin:8px 0 4px">鎧を張る先を選んでください。${esc(p.shield_info||"")}${presetTxt}` +
           (p.ai && p.ai.shield_text ? `<br>AIなら: <b>${esc(p.ai.shield_text)}</b>` : "") +
           (o && o.cast ? "<br>詠唱を始める手番は、自分には張れない" : "") + `</div><div class="opts">`;
   opts.forEach((x,i) => { h += `<button data-s="${i}">🛡 ${esc(x.name)}に張る<small>${esc(x.note)}</small></button>`; });
@@ -456,8 +462,52 @@ function showEnd(v){
   sh.innerHTML = `<div class="endbox"><div class="res" style="color:${v.winner==="ally"?"var(--hp)":"var(--hpcrit)"}">${v.result}</div>
     <div class="note">戦闘の番号 ${s.seed}・敵の知能 ${v.static.intel_name}・あなたの指示 ${v.n_player_decisions}回</div>
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:10px">
-      <button id="eUndo">↶ 最後の指示をやり直す</button><button id="eRestart">同じ戦闘を最初から</button><button class="pri" id="eNew">新しい戦闘</button></div></div>`;
+      <button id="eUndo">↶ 最後の指示をやり直す</button><button id="eRestart">同じ戦闘を最初から</button><button class="pri" id="eNew">新しい戦闘</button>
+      <button id="eRec">📋 記録をコピー（チャットに貼ると再現できる）</button></div><div id="recBox"></div></div>`;
   $("eUndo").onclick = undo; $("eRestart").onclick = restart; $("eNew").onclick = toStart;
+  $("eRec").onclick = () => copyRecord($("recBox"));
+}
+// ---------------------------------------------------------------- 鎧の基本セット（3つまで保存。この端末のブラウザに保存）
+const PRESET_UNITS = [["adel","アデル"],["vanguard3","前衛3"],["vanguard","前衛2"],["celestia","セレスティア"],["toolsmith","エーテル学者"]];
+const PRESET_CAN = { adel:["adel","vanguard","vanguard3","celestia"], vanguard3:["vanguard3","adel","vanguard","celestia","toolsmith"],
+                     vanguard:["vanguard","adel","vanguard3","toolsmith"], celestia:["celestia"], toolsmith:["toolsmith"] };
+const PRESET_NAME = Object.fromEntries(PRESET_UNITS);
+const PRESET_DEFAULT = { adel:"celestia", vanguard3:"celestia", vanguard:"toolsmith", celestia:"celestia", toolsmith:"toolsmith" };
+let PRESETS = [ {...PRESET_DEFAULT}, {...PRESET_DEFAULT}, {...PRESET_DEFAULT} ], PRESET_SLOT = 0;
+try { const j = JSON.parse(localStorage.getItem("tns_shield_presets") || "null"); if (j && j.sets) { PRESETS = j.sets; PRESET_SLOT = j.slot || 0; } } catch (e) {}
+function savePresets(){ try { localStorage.setItem("tns_shield_presets", JSON.stringify({sets:PRESETS, slot:PRESET_SLOT})); } catch (e) {} }
+function readPreset(){
+  const p = {};
+  for (const [id] of PRESET_UNITS){ const v = $("pre-"+id).value; p[id] = v === "" ? null : v; }
+  PRESETS[PRESET_SLOT] = p; return p;
+}
+function renderPreset(){
+  const box = $("presetBox"); const cur = PRESETS[PRESET_SLOT];
+  let h = `<div style="display:flex;gap:6px;margin-bottom:6px;width:100%">` + [0,1,2].map(i =>
+    `<button class="${i===PRESET_SLOT?"pri":""}" data-slot="${i}" style="flex:1;white-space:nowrap">セット${i+1}</button>`).join("") + `</div>`
+    + `<div class="note" style="width:100%">誰が誰に鎧を張るか（仲間のAIもこれに従う。明らかに得な場面だけ変える）</div>`;
+  for (const [id, name] of PRESET_UNITS){
+    const opts = PRESET_CAN[id].map(t => `<option value="${t}" ${cur[id]===t?"selected":""}>→ ${t===id?"自分":PRESET_NAME[t]}</option>`).join("")
+               + `<option value="" ${cur[id]==null?"selected":""}>張らない</option>`;
+    h += `<label style="display:flex;align-items:center;gap:8px;justify-content:space-between;width:100%;box-sizing:border-box">`
+       + `<span style="white-space:nowrap">${name}</span><select id="pre-${id}" style="flex:0 1 55%;min-width:0">${opts}</select></label>`;
+  }
+  box.innerHTML = h;
+  box.querySelectorAll("button[data-slot]").forEach(b => b.onclick = (ev) => { ev.preventDefault(); readPreset(); PRESET_SLOT = +b.dataset.slot; renderPreset(); savePresets(); });
+  box.querySelectorAll("select").forEach(s => s.onchange = () => { readPreset(); savePresets(); });
+}
+renderPreset();
+function copyRecord(box){
+  const rec = (G.view && G.view.record) || "";
+  const fallback = () => {
+    box.innerHTML = `<div class="note">自動でコピーできませんでした。下の文字を長押しして全選択→コピーしてください。</div><textarea readonly style="width:100%;height:90px;font-size:11px">${esc(rec)}</textarea>`;
+    const ta = box.querySelector("textarea"); ta.focus(); ta.select();
+  };
+  try {
+    navigator.clipboard.writeText(rec).then(() => {
+      box.innerHTML = `<div class="note">コピーしました（${rec.length}文字）。Claudeとのチャットにそのまま貼り付けてください。</div>`;
+    }, fallback);
+  } catch (e) { fallback(); }
 }
 function showErr(r){ $("err").textContent = "エラー: " + (r.error||"") + "\n" + (r.trace||""); }
 
@@ -496,6 +546,7 @@ $("mApply").onclick = async () => {
   onView(r.view);
 };
 $("mRestart").onclick = () => { $("menu").classList.add("hidden"); restart(); };
+$("mRec").onclick = () => copyRecord($("mRecBox"));
 $("mClose").onclick = () => $("menu").classList.add("hidden");
 $("mNew").onclick = toStart;
 
@@ -503,7 +554,9 @@ async function startBattle(watch){
   const units = watch ? [] : [...$("sUnits").querySelectorAll("input:checked")].map(x=>x.value);
   const settings = { intel: +$("sIntel").value, manual_units: units, manual_intervention: watch ? "none" : $("sIv").value,
     cast: +$("sCast").value, enemy_power: parseFloat($("sPow").value) || 1.0, seed: $("sSeed").value.trim() || null,
-    ruleset: $("sRule").value, rear_reach: $("sRear").value || null, ambush: $("sAmb").value === "1" };
+    ruleset: $("sRule").value, rear_reach: $("sRear").value || null, ambush: $("sAmb").value === "1",
+    shield_preset: readPreset(), prebattle_mode: $("sPre").value };
+  savePresets();
   $("startMsg").textContent = "準備中…";
   const r = await api({cmd:"new", settings});
   if (!r.ok){ $("startMsg").textContent = "エラー: " + r.error; return; }
