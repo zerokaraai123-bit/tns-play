@@ -376,7 +376,7 @@ function showDecision(p){
     let h = `<h2>▶ ${nm(p.actor)}の手番（T ${p.snap.t.toFixed(2)}）</h2>` + aiLine(p) + `<div class="opts">`;
     p.options.forEach((o,i) => {
       const extra = o.cast!=null ? `詠唱 約${o.cast.toFixed(2)}T` : "";
-      const sub = o.ok ? [o.ep?`EP${o.ep}`:"EP0", extra, o.area==="all"?"敵全体":""].filter(Boolean).join("・")
+      const sub = o.ok ? [o.ep?`EP${o.ep}`:"EP0", extra, o.area==="all"?"敵全体":(o.area==="front"?"敵の前列全体":"")].filter(Boolean).join("・")
                        : `<span class="why">${o.why}</span>`;
       h += `<button data-a="${i}" ${o.ok?"":"disabled"}>${o.name}<small>${sub}</small></button>`;
     });
@@ -431,7 +431,7 @@ function commit(p, o, choice){
 }
 function pickAction(p, o){
   if (o.kind === "wait" || !o.targets.length){ commit(p, o, {action:o.id, target:null}); return; }
-  if (o.targets.length === 1 && o.area === "all"){ commit(p, o, {action:o.id, target:o.targets[0].id}); return; }
+  if (o.targets.length === 1 && (o.area === "all" || o.area === "front")){ commit(p, o, {action:o.id, target:o.targets[0].id}); return; }
   G.sel = {p, o, targets: new Set(o.targets.map(t=>t.id))};
   renderSnap(p.snap, {actor:p.actor});
   let h = `<div class="note" style="margin:8px 0 4px">「${o.name}」の対象を選んでください（カードをタップしても選べます）</div><div class="opts">`;
@@ -470,7 +470,7 @@ function showEnd(v){
 // ---------------------------------------------------------------- 鎧の基本セット（3つまで保存。この端末のブラウザに保存）
 const PRESET_UNITS = [["adel","アデル"],["vanguard3","前衛3"],["vanguard","前衛2"],["celestia","セレスティア"],["toolsmith","エーテル学者"]];
 const PRESET_CAN = { adel:["adel","vanguard","vanguard3","celestia"], vanguard3:["vanguard3","adel","vanguard","celestia","toolsmith"],
-                     vanguard:["vanguard","adel","vanguard3","toolsmith"], celestia:["celestia"], toolsmith:["toolsmith"] };
+                     vanguard:["vanguard","adel","vanguard3","toolsmith"], celestia:["celestia","toolsmith"], toolsmith:["toolsmith","celestia"] };
 const PRESET_NAME = Object.fromEntries(PRESET_UNITS);
 const PRESET_DEFAULT = { adel:"celestia", vanguard3:"celestia", vanguard:"toolsmith", celestia:"celestia", toolsmith:"toolsmith" };
 let PRESETS = [ {...PRESET_DEFAULT}, {...PRESET_DEFAULT}, {...PRESET_DEFAULT} ], PRESET_SLOT = 0;
