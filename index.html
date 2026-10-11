@@ -54,7 +54,12 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
 .unit .badges{font-size:10.5px;color:var(--cast);min-height:0;line-height:1.3}
 .castbar{height:4px;background:#2b2140;border-radius:3px;margin-top:3px;overflow:hidden}
 .castbar i{display:block;height:100%;background:var(--cast)}
-.timeline{display:flex;gap:4px;overflow-x:auto;padding:4px 0;margin-top:6px;-webkit-overflow-scrolling:touch}
+.timeline{display:flex;flex-wrap:wrap;gap:4px;padding:6px 0;margin-top:6px;align-items:center}
+.tlhead{width:100%;font-size:11px;color:var(--sub);margin-bottom:2px}
+.tl-item{display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);white-space:nowrap}
+.tl-item.enemy{border-color:#8a463e;background:rgba(160,60,50,.18)}.tl-item.ally{border-color:#3a6a8f;background:rgba(60,110,160,.18)}
+.tl-item .n{font-size:10px;opacity:.7}.tl-item .dt{font-size:10px;opacity:.75}.tl-item .mk{font-size:10px;color:var(--cast)}
+.tl-item.now{outline:2px solid var(--act)}
 .chip{flex:0 0 auto;font-size:11px;padding:4px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);white-space:nowrap}
 .chip.enemy{border-color:#6a3a34}.chip.ally{border-color:#2f5470}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px}
@@ -93,7 +98,7 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
 
 <!-- ===== 開始画面 ===== -->
 <div id="startView" class="start">
-  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261012001701</small></span></h1>
+  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261012004440</small></span></h1>
   <p class="note">味方5人（前衛3・後衛2）で戦います。味方の手番と、後衛が狙われた瞬間に時間が止まり、指示を出せます。何も指示しない部分は、既存の味方AIが判断します。</p>
   <label>ルール</label>
   <select id="sRule"><option value="v17" selected>Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
@@ -292,12 +297,20 @@ function renderSnap(snap, hl){
       : "前線: なし（後衛にもいつでも近接攻撃が届く。守りは鎧だけ）";
   $("frontLine").innerHTML = fl;
   // この後の行動順
-  const tl = $("timeline"); tl.innerHTML = "<span class='chip'>この後の順番 →</span>";
-  for (const id of (snap.upcoming||[]).slice(0,10)){
-    const c = document.createElement("span"); c.className = "chip " + (G.meta[id]?G.meta[id].side:""); c.textContent = nm(id); tl.appendChild(c);
-  }
+  $("timeline").innerHTML = tlHTML(snap, 8);
 }
 
+function tlHTML(snap, n){
+  // 行動の順番（今の手番 → この後 n 件）。敵=赤・味方=青、+数字は今から何T後か
+  const rows = snap.upcoming_t || (snap.upcoming||[]).map(id => ({id, dt:null, mark:""}));
+  let th = `<div class="tlhead">行動の順番（左から。<span style="color:#e08a7e">赤=敵</span>・<span style="color:#7fb2df">青=味方</span>・+数字は今から何T後か）</div>`;
+  if (snap.actor) th += `<span class="tl-item now ${G.meta[snap.actor]?G.meta[snap.actor].side:""}"><span class="n">今</span>${esc(nm(snap.actor))}</span>`;
+  rows.slice(0, n).forEach((r,i) => {
+    th += `<span class="tl-item ${G.meta[r.id]?G.meta[r.id].side:""}"><span class="n">${i+1}</span>${esc(nm(r.id))}`
+        + (r.dt!=null ? `<span class="dt">+${r.dt.toFixed(2)}</span>` : "") + (r.mark ? `<span class="mk">${esc(r.mark)}</span>` : "") + `</span>`;
+  });
+  return th;
+}
 function addLog(t, lines, actor){
   const box = $("log");
   const div = document.createElement("div");
@@ -378,7 +391,7 @@ function showDecision(p){
   if (p.kind === "action"){
     const hl = {actor:p.actor, targets:new Set(), guards:new Set()};
     renderSnap(p.snap, hl);
-    let h = `<h2>▶ ${nm(p.actor)}の手番（T ${p.snap.t.toFixed(2)}）</h2>` + aiLine(p) + `<div class="opts">`;
+    let h = `<h2>▶ ${nm(p.actor)}の手番（T ${p.snap.t.toFixed(2)}）</h2><div class="timeline">${tlHTML(p.snap, 6)}</div>` + aiLine(p) + `<div class="opts">`;
     p.options.forEach((o,i) => {
       const extra = o.cast!=null ? `詠唱 約${o.cast.toFixed(2)}T` : "";
       const sub = o.ok ? [o.ep?`EP${o.ep}`:"EP0", extra, o.area==="all"?"敵全体":(o.area==="front"?"敵の前列全体":"")].filter(Boolean).join("・")
@@ -603,7 +616,7 @@ $("btnWatch").onclick = () => startBattle(true);
   btns.forEach(b => b.disabled = true);
   try {
     const py = await loadPyodide();
-    const buf = await (await fetch("tns_bundle.zip?v=20261012001701", {cache: "no-store"})).arrayBuffer();
+    const buf = await (await fetch("tns_bundle.zip?v=20261012004440", {cache: "no-store"})).arrayBuffer();
     py.unpackArchive(buf, "zip", {extractDir: "/home/pyodide/tnsapp"});
     py.runPython("import sys, os\nsys.path.insert(0, '/home/pyodide/tnsapp')\nos.chdir('/home/pyodide/tnsapp')\nfrom tns.play.api import handle_json");
     const h = py.globals.get("handle_json");
