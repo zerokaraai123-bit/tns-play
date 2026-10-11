@@ -93,7 +93,7 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
 
 <!-- ===== 開始画面 ===== -->
 <div id="startView" class="start">
-  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261011233522</small></span></h1>
+  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261012001701</small></span></h1>
   <p class="note">味方5人（前衛3・後衛2）で戦います。味方の手番と、後衛が狙われた瞬間に時間が止まり、指示を出せます。何も指示しない部分は、既存の味方AIが判断します。</p>
   <label>ルール</label>
   <select id="sRule"><option value="v17" selected>Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
@@ -275,6 +275,7 @@ function renderSnap(snap, hl){
     if (u.holding) bd.push("⛨ 死守");
     if (u.device_used) bd.push("⚡ 装置は使用済み（次の手番まで生身）");
     if (u.layers && u.layers.length) bd.push("🛡 鎧" + u.layers.length + "枚（" + u.layers.join("・") + "）");
+    if (u.job) bd.push("⚔ " + u.job + (u.guard ? "（後衛への通常攻撃を防いでいる）" : ""));
     if (snap.howl && Object.values(snap.howl).includes(u.id)) bd.push("🐺 群れに狙われている");
     el.querySelector(".badges").textContent = bd.join("　");
   }
@@ -286,7 +287,9 @@ function renderSnap(snap, hl){
     const ew = (id, lbl) => `<span class="route ${snap.route_w[id]<=1?"open":""}">${lbl}: ${snap.route_w[id]===0?"突破できる":(snap.route_w[id]<=1?"薄い（突撃で抜ける）":"厚い")}</span>`;
     fl += `<br>敵の前線 ${ew("enemy_L","左（→リーダー）")} ${ew("enemy_R","右（→呪術師）")}`;
   }
-  if (snap.block === 0) fl = "前線: なし（後衛にもいつでも近接攻撃が届く。守りは鎧だけ）";
+  if (snap.block === 0) fl = (snap.units||[]).some(u => u.guard && G.meta[u.id] && G.meta[u.id].side === "ally")
+      ? "前線: 重戦士が立っている間、敵は後衛を通常攻撃できない（跳躍・魔法は届く）"
+      : "前線: なし（後衛にもいつでも近接攻撃が届く。守りは鎧だけ）";
   $("frontLine").innerHTML = fl;
   // この後の行動順
   const tl = $("timeline"); tl.innerHTML = "<span class='chip'>この後の順番 →</span>";
@@ -366,7 +369,9 @@ function showDecision(p){
     h += `<button data-s="-1">張らない<small>EPを温存する</small></button><button class="ghost" id="bAiPre">AIに任せる</button></div>`;
     sh.innerHTML = h;
     sh.querySelectorAll("button[data-s]").forEach(b => b.onclick = () => {
-      const i = +b.dataset.s; send(p, {shield: i < 0 ? null : p.shield_opts[i].id}); });
+      const i = +b.dataset.s; const first = i < 0 ? null : p.shield_opts[i].id;
+      if ((p.shield_n||1) > 1 && first) { pickSecond(p, sh, first, (s2) => send(p, {shield:first, shield2:s2})); return; }
+      send(p, {shield: first}); });
     $("bAiPre").onclick = () => send(p, {ai:true});
     return;
   }
@@ -417,7 +422,8 @@ function commit(p, o, choice){
   if (o && o.id === "focus") { send(p, {...choice, shield:null}); return; }
   const opts = p.shield_opts.filter(x => !(o && o.cast && x.self));
   G.sel = null; renderSnap(p.snap, {actor:p.actor});
-  const presetTxt = p.shield_preset_has ? `<br>基本セット: <b>${p.shield_preset_id ? esc(nm(p.shield_preset_id)===nm(p.actor)?"自分":nm(p.shield_preset_id)) + "に張る" : "張らない"}</b>` : "";
+  const one = (x) => x ? (x===p.actor?"自分":nm(x)) + "に張る" : "張らない";
+  const presetTxt = p.shield_preset_has ? `<br>基本セット: <b>${esc(Array.isArray(p.shield_preset_id) ? p.shield_preset_id.map(one).join("・") : one(p.shield_preset_id))}</b>` : "";
   let h = `<div class="note" style="margin:8px 0 4px">鎧を張る先を選んでください。${esc(p.shield_info||"")}${presetTxt}` +
           (p.ai && p.ai.shield_text ? `<br>AIなら: <b>${esc(p.ai.shield_text)}</b>` : "") +
           (o && o.cast ? "<br>詠唱を始める手番は、自分には張れない" : "") + `</div><div class="opts">`;
@@ -426,8 +432,19 @@ function commit(p, o, choice){
   h += `<button class="ghost full" id="bBackS">← 行動を選び直す</button></div>`;
   $("tgtBox").innerHTML = h;
   $("tgtBox").querySelectorAll("button[data-s]").forEach(b => b.onclick = () => {
-    const i = +b.dataset.s; send(p, {...choice, shield: i < 0 ? null : opts[i].id}); });
+    const i = +b.dataset.s; const first = i < 0 ? null : opts[i].id;
+    if ((p.shield_n||1) > 1 && first) { pickSecond(p, $("tgtBox"), first, (s2) => send(p, {...choice, shield:first, shield2:s2}), opts); return; }
+    send(p, {...choice, shield: first}); });
   $("bBackS").onclick = () => { renderSnap(p.snap, {actor:p.actor}); $("tgtBox").innerHTML = ""; };
+}
+function pickSecond(p, box, first, done, optsIn){
+  // 重戦士: 2枚目の鎧（1枚目と同じ相手でもよい）
+  const opts = optsIn || p.shield_opts;
+  let h = `<div class="note" style="margin:8px 0 4px">2枚目の鎧を張る先（1枚目: ${esc(first===p.actor?"自分":nm(first))}）</div><div class="opts">`;
+  opts.forEach((x,i) => { h += `<button data-s2="${i}">🛡 ${esc(x.name)}に張る<small>${esc(x.note)}</small></button>`; });
+  h += `<button data-s2="-1">2枚目は張らない<small>EPを温存する</small></button></div>`;
+  box.innerHTML = h;
+  box.querySelectorAll("button[data-s2]").forEach(b => b.onclick = () => { const i = +b.dataset.s2; done(i < 0 ? null : opts[i].id); });
 }
 function pickAction(p, o){
   if (o.kind === "wait" || !o.targets.length){ commit(p, o, {action:o.id, target:null}); return; }
@@ -472,13 +489,17 @@ const PRESET_UNITS = [["adel","アデル"],["vanguard3","前衛3"],["vanguard","
 const PRESET_CAN = { adel:["adel","vanguard","vanguard3","celestia"], vanguard3:["vanguard3","adel","vanguard","celestia","toolsmith"],
                      vanguard:["vanguard","adel","vanguard3","toolsmith"], celestia:["celestia","toolsmith"], toolsmith:["toolsmith","celestia"] };
 const PRESET_NAME = Object.fromEntries(PRESET_UNITS);
-const PRESET_DEFAULT = { adel:"celestia", vanguard3:"celestia", vanguard:"toolsmith", celestia:"celestia", toolsmith:"toolsmith" };
+const PRESET_DEFAULT = { adel:"celestia", vanguard3:["celestia","vanguard3"], vanguard:"toolsmith", celestia:"celestia", toolsmith:"toolsmith" };
+const PRESET_TWO = { vanguard3: true };   // 重戦士は2枚
 let PRESETS = [ {...PRESET_DEFAULT}, {...PRESET_DEFAULT}, {...PRESET_DEFAULT} ], PRESET_SLOT = 0;
 try { const j = JSON.parse(localStorage.getItem("tns_shield_presets") || "null"); if (j && j.sets) { PRESETS = j.sets; PRESET_SLOT = j.slot || 0; } } catch (e) {}
 function savePresets(){ try { localStorage.setItem("tns_shield_presets", JSON.stringify({sets:PRESETS, slot:PRESET_SLOT})); } catch (e) {} }
 function readPreset(){
   const p = {};
-  for (const [id] of PRESET_UNITS){ const v = $("pre-"+id).value; p[id] = v === "" ? null : v; }
+  for (const [id] of PRESET_UNITS){
+    const v = $("pre-"+id).value; const a = v === "" ? null : v;
+    if (PRESET_TWO[id]) { const v2 = $("pre2-"+id).value; p[id] = [a, v2 === "" ? null : v2]; } else p[id] = a;
+  }
   PRESETS[PRESET_SLOT] = p; return p;
 }
 function renderPreset(){
@@ -487,10 +508,12 @@ function renderPreset(){
     `<button class="${i===PRESET_SLOT?"pri":""}" data-slot="${i}" style="flex:1;white-space:nowrap">セット${i+1}</button>`).join("") + `</div>`
     + `<div class="note" style="width:100%">誰が誰に鎧を張るか（仲間のAIもこれに従う。明らかに得な場面だけ変える）</div>`;
   for (const [id, name] of PRESET_UNITS){
-    const opts = PRESET_CAN[id].map(t => `<option value="${t}" ${cur[id]===t?"selected":""}>→ ${t===id?"自分":PRESET_NAME[t]}</option>`).join("")
-               + `<option value="" ${cur[id]==null?"selected":""}>張らない</option>`;
+    const vals = Array.isArray(cur[id]) ? cur[id] : [cur[id], (PRESET_TWO[id] ? null : undefined)];
+    const mk = (v) => PRESET_CAN[id].map(t => `<option value="${t}" ${v===t?"selected":""}>→ ${t===id?"自分":PRESET_NAME[t]}</option>`).join("")
+               + `<option value="" ${v==null?"selected":""}>張らない</option>`;
     h += `<label style="display:flex;align-items:center;gap:8px;justify-content:space-between;width:100%;box-sizing:border-box">`
-       + `<span style="white-space:nowrap">${name}</span><select id="pre-${id}" style="flex:0 1 55%;min-width:0">${opts}</select></label>`;
+       + `<span style="white-space:nowrap">${name}${PRESET_TWO[id]?"（重戦士・2枚）":""}</span><span style="display:flex;flex-direction:column;gap:4px;flex:0 1 55%;min-width:0">`
+       + `<select id="pre-${id}">${mk(vals[0])}</select>` + (PRESET_TWO[id] ? `<select id="pre2-${id}">${mk(vals[1])}</select>` : "") + `</span></label>`;
   }
   box.innerHTML = h;
   box.querySelectorAll("button[data-slot]").forEach(b => b.onclick = (ev) => { ev.preventDefault(); readPreset(); PRESET_SLOT = +b.dataset.slot; renderPreset(); savePresets(); });
@@ -580,7 +603,7 @@ $("btnWatch").onclick = () => startBattle(true);
   btns.forEach(b => b.disabled = true);
   try {
     const py = await loadPyodide();
-    const buf = await (await fetch("tns_bundle.zip?v=20261011233522", {cache: "no-store"})).arrayBuffer();
+    const buf = await (await fetch("tns_bundle.zip?v=20261012001701", {cache: "no-store"})).arrayBuffer();
     py.unpackArchive(buf, "zip", {extractDir: "/home/pyodide/tnsapp"});
     py.runPython("import sys, os\nsys.path.insert(0, '/home/pyodide/tnsapp')\nos.chdir('/home/pyodide/tnsapp')\nfrom tns.play.api import handle_json");
     const h = py.globals.get("handle_json");
