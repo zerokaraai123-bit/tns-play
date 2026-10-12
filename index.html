@@ -98,12 +98,12 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
 
 <!-- ===== 開始画面 ===== -->
 <div id="startView" class="start">
-  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261012225501</small></span></h1>
+  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261013003536</small></span></h1>
   <p class="note">味方5人（前衛3・後衛2）で戦います。味方の手番と、後衛が狙われた瞬間に時間が止まり、指示を出せます。何も指示しない部分は、既存の味方AIが判断します。</p>
   <label>ルール</label>
-  <select id="sRule"><option value="v19" selected>Ver0.19（構え・観測の深さを選ぶ・鎧の耐久30 / ゴーレム戦）</option><option value="v18">Ver0.18（侍のため斬り: 斬り込み・一騎打ち / ヘイト上限100）</option><option value="v17">Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
-  <label>敵（Ver0.19）</label>
-  <select id="sEnc"><option value="golem" selected>魔導生命体A（ゴーレム・最序盤のボス・1体）</option><option value="wolves">狼の群れと呪術師（5体）</option></select>
+  <select id="sRule"><option value="v20" selected>Ver0.20（狼は装置なし・リーダーが仲間を呼ぶ / ゴーレム戦も可）</option><option value="v19">Ver0.19（構え・観測の深さを選ぶ・鎧の耐久30 / ゴーレム戦）</option><option value="v18">Ver0.18（侍のため斬り: 斬り込み・一騎打ち / ヘイト上限100）</option><option value="v17">Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
+  <label>敵（Ver0.19〜）</label>
+  <select id="sEnc"><option value="wolves" selected>狼の群れと呪術師（5体・Ver0.20はリーダーが仲間を呼ぶ）</option><option value="golem">魔導生命体A（ゴーレム・最序盤のボス・1体）</option></select>
   <label>戦闘の始まり（Ver0.17）</label>
   <select id="sAmb"><option value="0" selected>準備あり（戦闘前に鎧を張る）</option><option value="1">奇襲（敵が必ず先に動く・全員鎧なしで始まる）</option></select>
   <label>鎧の基本セット（移動中にいつでも変えられる想定・Ver0.17）</label>
@@ -224,24 +224,35 @@ function layoutIds(){
   return { rowEnemyRear:["leader","thrower","thrower2"], rowEnemyFront:["wolf_a","wolf_b","wolf_c"],
            rowAllyFront:["adel","vanguard3","vanguard"], rowAllyRear:["celestia","","toolsmith"] };
 }
+function makeUnitEl(id){
+  const d = document.createElement("div");
+  if (!id || !G.meta[id]){ d.style.visibility="hidden"; return d; }
+  const m = G.meta[id];
+  d.className = "unit " + m.side; d.id = "u-"+id;
+  d.innerHTML = `<div class="nm"><span>${m.name}${m.leader?" ★":""}</span><small>${m.pos || ("速度"+m.speed)}</small></div>
+    <div class="bar hp"><i></i><span></span></div><div class="bar ep"><i></i><span></span></div>
+    <div class="castbar hidden"><i></i></div><div class="st"></div><div class="badges"></div><span class="mark"></span>`;
+  d.addEventListener("click", () => onUnitTap(id));
+  return d;
+}
 function buildField(){
   const L = layoutIds();
+  G.slotKey = null;
   for (const row in L){
     const el = $(row); el.innerHTML = "";
     const none = L[row].every(x => !x);                       // ゴーレム戦: 敵の後衛がいない列は隠す
     el.classList.toggle("hidden", none); if (el.previousElementSibling) el.previousElementSibling.classList.toggle("hidden", none);
-    for (const id of L[row]){
-      const d = document.createElement("div");
-      if (!id){ d.style.visibility="hidden"; el.appendChild(d); continue; }
-      const m = G.meta[id];
-      d.className = "unit " + m.side; d.id = "u-"+id;
-      d.innerHTML = `<div class="nm"><span>${m.name}${m.leader?" ★":""}</span><small>${m.pos || ("速度"+m.speed)}</small></div>
-        <div class="bar hp"><i></i><span></span></div><div class="bar ep"><i></i><span></span></div>
-        <div class="castbar hidden"><i></i></div><div class="st"></div><div class="badges"></div><span class="mark"></span>`;
-      d.addEventListener("click", () => onUnitTap(id));
-      el.appendChild(d);
-    }
+    for (const id of L[row]) el.appendChild(makeUnitEl(id));
   }
+}
+// PA-284 呼ばれた狼が着いたら、敵の前列の並びを入れ替える（巻き戻し・再生でも、その場面の並びにする）
+function applySlots(slots){
+  if (!slots || !G.meta["shaman"]) return;
+  const key = slots.join(",");
+  if (G.slotKey === key) return;
+  G.slotKey = key;
+  const el = $("rowEnemyFront"); el.innerHTML = "";
+  for (const id of slots) el.appendChild(makeUnitEl(id));
 }
 
 function renderSnap(snap, hl){
@@ -249,6 +260,7 @@ function renderSnap(snap, hl){
   if (!snap) return;
   $("clock").textContent = "T " + snap.t.toFixed(2);
   $("roundLbl").textContent = "第" + snap.round + "巡";
+  applySlots(snap.slots);
   for (const u of snap.units){
     const el = $("u-"+u.id); if (!el) continue;
     const m = G.meta[u.id];
@@ -629,7 +641,7 @@ $("btnMenu").onclick = () => {
   $("mUnits").innerHTML = ["adel","vanguard3","vanguard","celestia","toolsmith"].map(id =>
     `<label><input type="checkbox" value="${id}" ${s.manual_units.includes(id)?"checked":""}>${nm(id)}</label>`).join("");
   $("mIv").value = s.manual_intervention === true ? "all" : (s.manual_intervention || "none");
-  $("mInfo").textContent = `ルール ${({v19:"Ver0.19",v18:"Ver0.18",v17:"Ver0.17",v16:"Ver0.16",v15:"Ver0.15"})[s.ruleset]||"Ver0.14"}・戦闘の番号 ${s.seed}・敵の知能 ${G.view.static.intel_name}・速度方式${s.method}・敵の攻撃力×${s.enemy_power}${s.ambush?"・奇襲（準備なし）":""}・後衛への近接${s.rear_reach==="open"?"いつでも届く":(s.rear_reach==="block"?"前線が塞ぐ":"ルールの既定")}`;
+  $("mInfo").textContent = `ルール ${({v20:"Ver0.20",v19:"Ver0.19",v18:"Ver0.18",v17:"Ver0.17",v16:"Ver0.16",v15:"Ver0.15"})[s.ruleset]||"Ver0.14"}・戦闘の番号 ${s.seed}・敵の知能 ${G.view.static.intel_name}・速度方式${s.method}・敵の攻撃力×${s.enemy_power}${s.ambush?"・奇襲（準備なし）":""}・後衛への近接${s.rear_reach==="open"?"いつでも届く":(s.rear_reach==="block"?"前線が塞ぐ":"ルールの既定")}`;
 };
 $("mApply").onclick = async () => {
   const units = [...$("mUnits").querySelectorAll("input:checked")].map(x=>x.value);
@@ -673,7 +685,7 @@ $("btnWatch").onclick = () => startBattle(true);
   btns.forEach(b => b.disabled = true);
   try {
     const py = await loadPyodide();
-    const buf = await (await fetch("tns_bundle.zip?v=20261012225501", {cache: "no-store"})).arrayBuffer();
+    const buf = await (await fetch("tns_bundle.zip?v=20261013003536", {cache: "no-store"})).arrayBuffer();
     py.unpackArchive(buf, "zip", {extractDir: "/home/pyodide/tnsapp"});
     py.runPython("import sys, os\nsys.path.insert(0, '/home/pyodide/tnsapp')\nos.chdir('/home/pyodide/tnsapp')\nfrom tns.play.api import handle_json");
     const h = py.globals.get("handle_json");
