@@ -98,7 +98,7 @@ header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.02em}
 
 <!-- ===== 開始画面 ===== -->
 <div id="startView" class="start">
-  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261013012028</small></span></h1>
+  <h1 style="font-size:20px;margin:6px 0">THE NAMELESS STORY<br><span style="font-size:14px;color:var(--sub)">戦闘プロトタイプ（試作）<br><small>版: 20261013020138</small></span></h1>
   <p class="note">味方5人（前衛3・後衛2）で戦います。味方の手番と、後衛が狙われた瞬間に時間が止まり、指示を出せます。何も指示しない部分は、既存の味方AIが判断します。</p>
   <label>ルール</label>
   <select id="sRule"><option value="v20" selected>Ver0.20（狼は装置なし・リーダーが仲間を呼ぶ / ゴーレム戦も可）</option><option value="v19">Ver0.19（構え・観測の深さを選ぶ・鎧の耐久30 / ゴーレム戦）</option><option value="v18">Ver0.18（侍のため斬り: 斬り込み・一騎打ち / ヘイト上限100）</option><option value="v17">Ver0.17（装置は先に張る鎧・重ねがけ / 敵5体）</option><option value="v16">Ver0.16（装置1回・鎧の介入・観測の深さ・前借り・集中 / 敵5体）</option><option value="v15">Ver0.15（役割・新しい行動・呪術師・観測固定 / 敵5体）</option><option value="v14">Ver0.14（狼の群れ6体）</option></select>
@@ -685,7 +685,7 @@ $("btnWatch").onclick = () => startBattle(true);
   btns.forEach(b => b.disabled = true);
   try {
     const py = await loadPyodide();
-    const buf = await (await fetch("tns_bundle.zip?v=20261013012028", {cache: "no-store"})).arrayBuffer();
+    const buf = await (await fetch("tns_bundle.zip?v=20261013020138", {cache: "no-store"})).arrayBuffer();
     py.unpackArchive(buf, "zip", {extractDir: "/home/pyodide/tnsapp"});
     py.runPython("import sys, os\nsys.path.insert(0, '/home/pyodide/tnsapp')\nos.chdir('/home/pyodide/tnsapp')\nfrom tns.play.api import handle_json");
     const h = py.globals.get("handle_json");
